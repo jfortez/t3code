@@ -1,6 +1,7 @@
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 
+import { requestConfirmDialog } from "../confirmDialog";
 import {
   type ComposerThreadTarget,
   composerDraftHasUserContent,
@@ -70,4 +71,40 @@ export function discardComposerDraft(target: ComposerThreadTarget): void {
     },
     commit: () => releaseDraftAttachments([...draft.images, ...draft.files]),
   });
+}
+
+const discardDraftConfirmation =
+  "Discard this draft?\nYour unsent text and attachments will be deleted. You can undo it right after.";
+
+// A second click while the first dialog is opening would queue a second dialog for the same draft.
+const pendingDiscardConfirmations = new Set<string>();
+
+function discardConfirmationKey(target: ComposerThreadTarget): string {
+  return typeof target === "string"
+    ? `draft:${target}`
+    : `thread:${target.environmentId}:${target.threadId}`;
+}
+
+export async function confirmDiscardComposerDraft(target: ComposerThreadTarget): Promise<void> {
+  const pendingKey = discardConfirmationKey(target);
+  if (pendingDiscardConfirmations.has(pendingKey)) return;
+
+  const store = useComposerDraftStore.getState();
+  const key = resolveComposerDraftKey(store, target);
+  const draft = key === null ? undefined : store.draftsByThreadKey[key];
+  if (!draft || !composerDraftHasUserContent(draft)) {
+    // An emptied draft row still needs its X to remove the row; a thread has nothing to lose.
+    if (typeof target === "string") discardComposerDraft(target);
+    return;
+  }
+
+  pendingDiscardConfirmations.add(pendingKey);
+  try {
+    const confirmed =
+      (await requestConfirmDialog(discardDraftConfirmation, { variant: "destructive" })) ??
+      (typeof window === "undefined" ? false : window.confirm(discardDraftConfirmation));
+    if (confirmed) discardComposerDraft(target);
+  } finally {
+    pendingDiscardConfirmations.delete(pendingKey);
+  }
 }
