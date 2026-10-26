@@ -255,7 +255,10 @@ export function HtmlRenderDocument(props: {
       ) {
         return;
       }
-      setExpandedImage({ images: [{ src: request.src, name: request.name }], index: 0 });
+      setExpandedImage({
+        images: request.images.map(({ src, name }) => ({ src, name })),
+        index: request.index,
+      });
     };
     window.addEventListener("message", openImage);
     return () => window.removeEventListener("message", openImage);
